@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::TBool;
@@ -30,12 +30,6 @@ pub struct VectorParameters {
 
 pub trait EncodedVectors: Sized {
     type EncodedQuery;
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self>;
 
     fn is_on_disk(&self) -> bool;
 
@@ -72,6 +66,10 @@ pub trait EncodedVectors: Sized {
     fn vectors_count(&self) -> usize;
 
     fn flusher(&self) -> MmapFlusher;
+
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
 
     type SupportsBytes: TBool;
     fn score_bytes(

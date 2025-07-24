@@ -17,10 +17,6 @@ use memory::mmap_type::MmapFlusher;
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> &[u8];
 
-    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self>
-    where
-        Self: Sized;
-
     fn is_on_disk(&self) -> bool;
 
     fn upsert_vector(
@@ -33,6 +29,10 @@ pub trait EncodedStorage {
     fn vectors_count(&self) -> usize;
 
     fn flusher(&self) -> MmapFlusher;
+
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
 }
 
 pub trait EncodedStorageBuilder {
@@ -46,7 +46,8 @@ pub trait EncodedStorageBuilder {
 #[cfg(feature = "testing")]
 pub struct TestEncodedStorage {
     data: Vec<u8>,
-    quantized_vector_size: NonZeroUsize,
+    quantized_vector_size: usize,
+    path: Option<PathBuf>,
 }
 
 #[cfg(feature = "testing")]
@@ -89,7 +90,37 @@ impl EncodedStorage for TestEncodedStorage {
         Ok(())
     }
 
-    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
+    fn is_on_disk(&self) -> bool {
+        false
+    }
+
+    fn vectors_count(&self) -> usize {
+        self.data.len() / self.quantized_vector_size.get()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        if let Some(ref path) = self.path {
+            vec![path.clone()]
+        } else {
+            vec![]
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.files()
+    }
+}
+
+#[cfg(feature = "testing")]
+impl TestEncodedStorage {
+    pub fn load(
+        path: &std::path::Path,
+        quantized_vector_size: usize,
+    ) -> std::io::Result<TestEncodedStorage> {
         let mut file = OneshotFile::open(path)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
@@ -114,18 +145,6 @@ impl EncodedStorage for TestEncodedStorage {
             data: buffer,
             quantized_vector_size,
         })
-    }
-
-    fn is_on_disk(&self) -> bool {
-        false
-    }
-
-    fn vectors_count(&self) -> usize {
-        self.data.len() / self.quantized_vector_size.get()
-    }
-
-    fn flusher(&self) -> MmapFlusher {
-        Box::new(|| Ok(()))
     }
 }
 
@@ -170,6 +189,7 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
         Ok(TestEncodedStorage {
             data: self.data,
             quantized_vector_size: self.quantized_vector_size,
+            path: self.path,
         })
     }
 

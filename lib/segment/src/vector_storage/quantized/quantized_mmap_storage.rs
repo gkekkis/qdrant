@@ -1,5 +1,5 @@
 use std::num::NonZeroUsize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -12,11 +12,32 @@ use memory::mmap_type::MmapFlusher;
 pub struct QuantizedMmapStorage {
     mmap: Mmap,
     quantized_vector_size: NonZeroUsize,
+    path: PathBuf,
 }
 
 impl QuantizedMmapStorage {
     pub fn populate(&self) {
         self.mmap.populate();
+    }
+
+    pub fn from_file(
+        path: &Path,
+        quantized_vector_size: usize,
+    ) -> std::io::Result<QuantizedMmapStorage> {
+        if quantized_vector_size == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "quantized_vector_size must be > 0",
+            ));
+        }
+        let file = std::fs::OpenOptions::new().read(true).open(path)?;
+        let mmap = unsafe { Mmap::map(&file)? };
+        madvise::madvise(&mmap, madvise::get_global())?;
+        Ok(Self {
+            mmap,
+            quantized_vector_size,
+            path: path.to_path_buf(),
+        })
     }
 }
 
@@ -24,6 +45,7 @@ pub struct QuantizedMmapStorageBuilder {
     mmap: MmapMut,
     cursor_pos: usize,
     quantized_vector_size: NonZeroUsize,
+    path: PathBuf,
 }
 
 impl quantization::EncodedStorage for QuantizedMmapStorage {
@@ -45,36 +67,6 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
         ))
     }
 
-    fn from_file(
-        path: &Path,
-        quantized_vector_size: usize,
-    ) -> std::io::Result<QuantizedMmapStorage> {
-        let file = std::fs::OpenOptions::new().read(true).open(path)?;
-        let mmap = unsafe { Mmap::map(&file)? };
-        madvise::madvise(&mmap, madvise::get_global())?;
-
-        let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "`quantized_vector_size` must be non-zero",
-            )
-        })?;
-        if !mmap.len().is_multiple_of(quantized_vector_size.get()) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "Encoded file size ({}) is not a multiple of quantized_vector_size ({})",
-                    mmap.len(),
-                    quantized_vector_size
-                ),
-            ));
-        }
-        Ok(Self {
-            mmap,
-            quantized_vector_size,
-        })
-    }
-
     fn is_on_disk(&self) -> bool {
         true
     }
@@ -87,6 +79,14 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
         // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
         Box::new(|| Ok(()))
     }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
 }
 
 impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
@@ -98,10 +98,23 @@ impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
         Ok(QuantizedMmapStorage {
             mmap,
             quantized_vector_size: self.quantized_vector_size,
+            path: self.path,
         })
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {
+        debug_assert_eq!(
+            self.quantized_vector_size,
+            other.len(),
+            "Pushed vector size does not match expected quantized vector size"
+        );
+        debug_assert!(
+            self.cursor_pos + other.len() <= self.mmap.len(),
+            "Overflow allocated quantization storage mmap file (cursor_pos {} + len {} > total {})",
+            self.cursor_pos,
+            other.len(),
+            self.mmap.len()
+        );
         self.mmap[self.cursor_pos..self.cursor_pos + other.len()].copy_from_slice(other);
         self.cursor_pos += other.len();
     }
@@ -149,6 +162,7 @@ impl QuantizedMmapStorageBuilder {
                     "`quantized_vector_size` must be non-zero",
                 )
             })?,
+            path: path.to_path_buf(),
         })
     }
 }

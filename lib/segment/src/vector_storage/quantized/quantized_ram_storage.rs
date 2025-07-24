@@ -15,6 +15,29 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 #[derive(Debug)]
 pub struct QuantizedRamStorage {
     vectors: ChunkedVectors<u8>,
+    path: PathBuf,
+}
+
+impl QuantizedRamStorage {
+    pub fn load(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
+        let mut vectors = ChunkedVectors::<u8>::new(quantized_vector_size);
+        let file = OneshotFile::open(path)?;
+        let mut reader = BufReader::new(file);
+        let mut buffer = vec![0u8; quantized_vector_size];
+        while reader.read_exact(&mut buffer).is_ok() {
+            vectors.push(&buffer).map_err(|err| {
+                std::io::Error::new(
+                    std::io::ErrorKind::OutOfMemory,
+                    format!("Failed to load quantized vectors from file: {err}"),
+                )
+            })?;
+        }
+        reader.into_inner().drop_cache()?;
+        Ok(QuantizedRamStorage {
+            vectors,
+            path: path.to_path_buf(),
+        })
+    }
 }
 
 impl quantization::EncodedStorage for QuantizedRamStorage {
@@ -35,23 +58,6 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         Ok(())
     }
 
-    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
-        let mut vectors = ChunkedVectors::<u8>::new(quantized_vector_size);
-        let file = OneshotFile::open(path)?;
-        let mut reader = BufReader::new(file);
-        let mut buffer = vec![0u8; quantized_vector_size];
-        while reader.read_exact(&mut buffer).is_ok() {
-            vectors.push(&buffer).map_err(|err| {
-                std::io::Error::new(
-                    std::io::ErrorKind::OutOfMemory,
-                    format!("Failed to load quantized vectors from file: {err}"),
-                )
-            })?;
-        }
-        reader.into_inner().drop_cache()?;
-        Ok(QuantizedRamStorage { vectors })
-    }
-
     fn is_on_disk(&self) -> bool {
         false
     }
@@ -62,6 +68,14 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
 
     fn flusher(&self) -> MmapFlusher {
         Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
     }
 }
 
@@ -99,6 +113,7 @@ impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
 
         Ok(QuantizedRamStorage {
             vectors: self.vectors,
+            path: self.path,
         })
     }
 
