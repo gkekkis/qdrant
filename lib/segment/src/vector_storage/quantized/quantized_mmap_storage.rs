@@ -114,6 +114,18 @@ impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {
+        debug_assert_eq!(
+            self.quantized_vector_size,
+            other.len(),
+            "Pushed vector size does not match expected quantized vector size"
+        );
+        debug_assert!(
+            self.cursor_pos + other.len() <= self.mmap.len(),
+            "Overflow allocated quantization storage mmap file (cursor_pos {} + len {} > total {})",
+            self.cursor_pos,
+            other.len(),
+            self.mmap.len()
+        );
         self.mmap[self.cursor_pos..self.cursor_pos + other.len()].copy_from_slice(other);
         self.cursor_pos += other.len();
     }
