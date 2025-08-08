@@ -13,7 +13,7 @@ use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use segment::common::operation_error::OperationResult;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::SeqNumberType;
+use segment::types::{QuantizationConfig, SeqNumberType};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{Mutex as TokioMutex, oneshot};
@@ -452,6 +452,7 @@ impl UpdateHandler {
         segments: &LockedSegmentHolder,
         segments_path: &Path,
         collection_params: &CollectionParams,
+        collection_quantization: &Option<QuantizationConfig>,
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
@@ -480,6 +481,7 @@ impl UpdateHandler {
             segments.write().create_appendable_segment(
                 segments_path,
                 collection_params,
+                collection_quantization,
                 payload_index_schema,
             )?;
         }
@@ -638,6 +640,7 @@ impl UpdateHandler {
                     &segments,
                     optimizer.segments_path(),
                     &optimizer.collection_params(),
+                    &optimizer.quantization_config(),
                     optimizer.threshold_config(),
                     payload_index_schema.clone(),
                 );
