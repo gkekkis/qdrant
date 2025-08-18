@@ -24,15 +24,26 @@ impl QuantizedMmapStorage {
         path: &Path,
         quantized_vector_size: usize,
     ) -> std::io::Result<QuantizedMmapStorage> {
-        if quantized_vector_size == 0 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "quantized_vector_size must be > 0",
-            ));
-        }
         let file = std::fs::OpenOptions::new().read(true).open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
         madvise::madvise(&mmap, madvise::get_global())?;
+
+        let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "`quantized_vector_size` must be non-zero",
+            )
+        })?;
+        if !mmap.len().is_multiple_of(quantized_vector_size.get()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Encoded file size ({}) is not a multiple of quantized_vector_size ({})",
+                    mmap.len(),
+                    quantized_vector_size
+                ),
+            ));
+        }
         Ok(Self {
             mmap,
             quantized_vector_size,
@@ -103,18 +114,6 @@ impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {
-        debug_assert_eq!(
-            self.quantized_vector_size,
-            other.len(),
-            "Pushed vector size does not match expected quantized vector size"
-        );
-        debug_assert!(
-            self.cursor_pos + other.len() <= self.mmap.len(),
-            "Overflow allocated quantization storage mmap file (cursor_pos {} + len {} > total {})",
-            self.cursor_pos,
-            other.len(),
-            self.mmap.len()
-        );
         self.mmap[self.cursor_pos..self.cursor_pos + other.len()].copy_from_slice(other);
         self.cursor_pos += other.len();
     }

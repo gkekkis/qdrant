@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::{Read, Write};
 #[cfg(feature = "testing")]
 use std::num::NonZeroUsize;
-use std::path::Path;
 #[cfg(feature = "testing")]
 use std::path::PathBuf;
 
@@ -46,7 +45,7 @@ pub trait EncodedStorageBuilder {
 #[cfg(feature = "testing")]
 pub struct TestEncodedStorage {
     data: Vec<u8>,
-    quantized_vector_size: usize,
+    quantized_vector_size: NonZeroUsize,
     path: Option<PathBuf>,
 }
 
@@ -144,6 +143,7 @@ impl TestEncodedStorage {
         Ok(Self {
             data: buffer,
             quantized_vector_size,
+            path: Some(path.to_owned()),
         })
     }
 }

@@ -1,5 +1,5 @@
 use std::ops::DerefMut;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
@@ -93,9 +93,10 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
         if id as usize >= self.len() {
-            self.resize(id as usize + 1, MultivectorOffset::default());
+            self.offsets
+                .resize(id as usize + 1, MultivectorOffset::default());
         }
-        self[id as usize] = offset;
+        self.offsets[id as usize] = offset;
         Ok(())
     }
 
@@ -115,6 +116,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
 #[derive(Debug)]
 pub struct MultivectorOffsetsStorageMmap {
     offsets: MmapSlice<MultivectorOffset>,
+    path: PathBuf,
 }
 
 impl MultivectorOffsetsStorageMmap {
@@ -135,8 +137,8 @@ impl MultivectorOffsetsStorageMmap {
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
         let offsets = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
         Ok(Self {
-            path: path.to_path_buf(),
             offsets,
+            path: path.to_path_buf(),
         })
     }
 }

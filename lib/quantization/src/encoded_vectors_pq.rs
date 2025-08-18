@@ -140,7 +140,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     pub fn load(meta_path: &Path, encoded_vectors: TStorage) -> std::io::Result<Self> {
         let contents = std::fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
-        let quantized_vector_size = metadata.vector_division.len();
         let result = Self {
             encoded_vectors,
             metadata,
