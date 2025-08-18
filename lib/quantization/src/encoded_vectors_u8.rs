@@ -575,7 +575,6 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         }
         files
     }
-}
 
     type SupportsBytes = True;
     fn score_bytes(
